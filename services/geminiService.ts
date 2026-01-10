@@ -1,8 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Candle, TradeSignal, TradeAction } from "../types";
 
-export const analyzeWithAi = async (apiKey: string, candles: Candle[], algoSignal: TradeSignal): Promise<TradeSignal> => {
-  const ai = new GoogleGenAI({ apiKey });
+export const analyzeWithAi = async (candles: Candle[], algoSignal: TradeSignal): Promise<TradeSignal> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = "gemini-3-flash-preview";
   
   const recent = candles.slice(-20).map(c => `H:${c.high} L:${c.low} C:${c.close}`).join('|');
@@ -40,7 +40,7 @@ export const analyzeWithAi = async (apiKey: string, candles: Candle[], algoSigna
       }
     });
 
-    const data = JSON.parse(response.text);
+    const data = JSON.parse(response.text || '{}');
     return {
       ...algoSignal,
       action: data.action as TradeAction,

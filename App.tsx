@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Menu, X, Wallet, RefreshCw, Activity, 
@@ -69,7 +68,7 @@ export default function App() {
     const runEngine = async () => {
       let signal = analyzeMarketAlgo(candles);
       if (signal.action !== TradeAction.HOLD && settings.useAiAssistant) {
-        signal = await analyzeWithAi(process.env.API_KEY || '', candles, signal);
+        signal = await analyzeWithAi(candles, signal);
       }
       setLastSignal(signal);
       if (signal.action !== TradeAction.HOLD && botState.openPositions.length === 0) {
