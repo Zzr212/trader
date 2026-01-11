@@ -4,6 +4,12 @@ import { Candle, Timeframe } from '../types';
 const BINANCE_REST = 'https://api.binance.com/api/v3/klines';
 const BINANCE_WS = 'wss://stream.binance.com:9443/ws';
 
+export const WATCHLIST = [
+  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 
+  'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 
+  'DOTUSDT', 'MATICUSDT'
+];
+
 export const fetchHistoricalData = async (symbol: string = 'BTCUSDT', interval: Timeframe = '1m', limit: number = 300, endTime?: number): Promise<Candle[]> => {
   try {
     let url = `${BINANCE_REST}?symbol=${symbol}&interval=${interval}&limit=${limit}`;
@@ -13,6 +19,9 @@ export const fetchHistoricalData = async (symbol: string = 'BTCUSDT', interval: 
 
     const response = await fetch(url);
     const data = await response.json();
+    
+    if (!Array.isArray(data)) return [];
+
     return data.map((d: any) => ({
       time: Math.floor(d[0] / 1000),
       open: parseFloat(d[1]),
@@ -22,7 +31,7 @@ export const fetchHistoricalData = async (symbol: string = 'BTCUSDT', interval: 
       volume: parseFloat(d[5]),
     }));
   } catch (error) {
-    console.error("Market fetch error:", error);
+    console.error(`Market fetch error [${symbol}]:`, error);
     return [];
   }
 };
@@ -31,16 +40,20 @@ export const subscribeToTicker = (symbol: string, interval: Timeframe, onUpdate:
   const ws = new WebSocket(`${BINANCE_WS}/${symbol.toLowerCase()}@kline_${interval}`);
   
   ws.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    const k = msg.k;
-    onUpdate({
-      time: Math.floor(k.t / 1000),
-      open: parseFloat(k.o),
-      high: parseFloat(k.h),
-      low: parseFloat(k.l),
-      close: parseFloat(k.c),
-      volume: parseFloat(k.v),
-    });
+    try {
+      const msg = JSON.parse(event.data);
+      const k = msg.k;
+      onUpdate({
+        time: Math.floor(k.t / 1000),
+        open: parseFloat(k.o),
+        high: parseFloat(k.h),
+        low: parseFloat(k.l),
+        close: parseFloat(k.c),
+        volume: parseFloat(k.v),
+      });
+    } catch (e) {
+      // Ignore parse errors on socket
+    }
   };
 
   return () => ws.close();

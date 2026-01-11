@@ -19,23 +19,24 @@ interface TradingChartProps {
   positions: TradePosition[];
   lastSignal: TradeSignal | null;
   onLoadMore: () => Promise<void>;
+  symbol: string;
 }
 
-export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, positions, lastSignal, onLoadMore }) => {
+export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, positions, lastSignal, onLoadMore, symbol }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<any> | null>(null);
   const linesRef = useRef<IPriceLine[]>([]);
-  const lastTimeRef = useRef<number>(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
+  // Initialize Chart
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: '#020617' },
-        textColor: '#94a3b8',
+        textColor: '#64748b',
       },
       grid: {
         vertLines: { color: '#0f172a' },
@@ -52,12 +53,11 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, position
         secondsVisible: false,
       },
       width: chartContainerRef.current.clientWidth,
-      height: 400, // Slightly reduced height for mobile optimization
+      height: 400,
     });
 
     chartRef.current = chart;
 
-    // Infinite Scroll Logic
     chart.timeScale().subscribeVisibleLogicalRangeChange(async (range) => {
       if (range && range.from < 0 && !isLoadingMore) {
         setIsLoadingMore(true);
@@ -79,17 +79,19 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, position
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, []); // Empty dependency mainly, hooks handle updates
+  }, []);
 
+  // Update Data & Mode
   useEffect(() => {
     if (!chartRef.current) return;
     
+    // Reset series if type changes
     if (seriesRef.current && seriesRef.current.seriesType() !== (mode === 'CANDLES' ? 'Candlestick' : mode === 'AREA' ? 'Area' : 'Line')) {
       chartRef.current.removeSeries(seriesRef.current);
       seriesRef.current = null;
-      lastTimeRef.current = 0;
     }
 
+    // Create series if not exists
     if (!seriesRef.current) {
       const commonOptions = {
         priceFormat: { type: 'price' as const, precision: 2, minMove: 0.01 },
@@ -114,36 +116,40 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, position
       }
     }
 
+    // Set Data
     if (data.length > 0) {
       const sortedData = [...data].sort((a, b) => a.time - b.time);
       seriesRef.current.setData(sortedData as any);
     }
-  }, [data, mode]);
+  }, [data, mode, symbol]); // Re-run when symbol changes to refresh data display
 
+  // Update Lines (Positions + Algo Patterns)
   useEffect(() => {
     if (!seriesRef.current) return;
 
+    // 1. Clean existing lines
     linesRef.current.forEach(line => seriesRef.current?.removePriceLine(line));
     linesRef.current = [];
 
-    const activePos = positions[0];
-    const signal = lastSignal && lastSignal.action !== TradeAction.HOLD ? lastSignal : null;
+    // 2. Draw Active Position or Signal
+    const activePos = positions.find(p => p.symbol === symbol);
+    const signal = lastSignal && lastSignal.symbol === symbol && lastSignal.action !== TradeAction.HOLD ? lastSignal : null;
     const target = activePos || signal;
 
     if (target) {
       const isSignal = !activePos;
       const opacity = isSignal ? 0.4 : 0.8;
       const lineStyle = isSignal ? 2 : 0;
-
       const entryPrice = activePos ? activePos.entryPrice : signal?.entry;
+
       if (entryPrice) {
         linesRef.current.push(seriesRef.current.createPriceLine({
           price: entryPrice,
-          color: `rgba(255, 255, 255, ${opacity})`,
+          color: activePos ? '#3b82f6' : `rgba(255, 255, 255, ${opacity})`,
           lineWidth: 2,
           lineStyle,
           axisLabelVisible: true,
-          title: activePos ? `${activePos.type} ENTRY` : `SIGNAL ENTRY`,
+          title: activePos ? `${activePos.type} ENTRY` : `SIGNAL`,
         }));
       }
 
@@ -151,7 +157,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, position
         linesRef.current.push(seriesRef.current.createPriceLine({
           price: target.tp,
           color: `rgba(16, 185, 129, ${opacity})`,
-          lineWidth: 2,
+          lineWidth: 1,
           lineStyle,
           axisLabelVisible: true,
           title: 'TP',
@@ -162,22 +168,42 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, position
         linesRef.current.push(seriesRef.current.createPriceLine({
           price: target.sl,
           color: `rgba(239, 68, 68, ${opacity})`,
-          lineWidth: 2,
+          lineWidth: 1,
           lineStyle,
           axisLabelVisible: true,
           title: 'SL',
         }));
       }
     }
-  }, [positions, lastSignal]);
+
+    // 3. Draw Algo Detected Lines (Support/Resistance)
+    if (lastSignal && lastSignal.symbol === symbol && lastSignal.chartLines) {
+      lastSignal.chartLines.forEach(line => {
+         linesRef.current.push(seriesRef.current!.createPriceLine({
+           price: line.price,
+           color: line.color,
+           lineWidth: 1,
+           lineStyle: 3, // Dotted
+           axisLabelVisible: false,
+           title: line.title
+         }));
+      });
+    }
+
+  }, [positions, lastSignal, symbol]);
 
   return (
-    <div className="relative">
-      <div ref={chartContainerRef} className="w-full border-y border-white/5 h-[400px]" />
-      {lastSignal && lastSignal.patterns && lastSignal.patterns.length > 0 && (
-        <div className="absolute top-4 left-4 flex flex-wrap gap-2 pointer-events-none">
+    <div className="relative group">
+      <div ref={chartContainerRef} className="w-full border-y border-white/5 h-[400px] transition-opacity" />
+      {/* Watermark */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/5 font-black text-6xl pointer-events-none z-0">
+        {symbol}
+      </div>
+      {/* Pattern Tags */}
+      {lastSignal && lastSignal.symbol === symbol && lastSignal.patterns && lastSignal.patterns.length > 0 && (
+        <div className="absolute top-4 left-4 flex flex-wrap gap-2 pointer-events-none z-10">
           {lastSignal.patterns.map((p, i) => (
-            <span key={i} className="px-3 py-1 bg-black/60 border border-white/10 text-[9px] text-indigo-400 font-black rounded-lg uppercase tracking-widest backdrop-blur-md">
+            <span key={i} className="px-3 py-1 bg-indigo-500/20 border border-indigo-500/30 text-[9px] text-indigo-300 font-black rounded-lg uppercase tracking-widest backdrop-blur-md shadow-lg">
               {p}
             </span>
           ))}

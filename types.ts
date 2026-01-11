@@ -1,3 +1,4 @@
+
 export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
 export type ChartMode = 'CANDLES' | 'AREA' | 'LINE';
 
@@ -30,6 +31,7 @@ export interface TradeRecord extends TradePosition {
 
 export interface BotState {
   isActive: boolean;
+  startTime?: number; // For persistent uptime
   balance: number;
   openPositions: TradePosition[];
   history: TradeRecord[];
@@ -49,7 +51,15 @@ export enum TradeAction {
   HOLD = 'HOLD'
 }
 
+export interface ChartLine {
+  price: number;
+  title: string;
+  color: string;
+  type: 'RESISTANCE' | 'SUPPORT' | 'TREND';
+}
+
 export interface TradeSignal {
+  symbol: string;
   action: TradeAction;
   confidence: number;
   reasoning: string;
@@ -57,5 +67,6 @@ export interface TradeSignal {
   tp: number;
   sl: number;
   patterns?: string[];
+  chartLines?: ChartLine[]; // For visual drawing
   timestamp: number;
 }

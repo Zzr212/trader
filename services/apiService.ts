@@ -7,17 +7,15 @@ const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
   try {
     const res = await fetch(url, options);
     if (!res.ok) {
-      // Try to get text, but handle cases where body might be empty
       const text = await res.text().catch(() => '');
-      // If 404 and HTML, it's likely a wrong route or missing file
-      if (res.status === 404 && text.includes('<!DOCTYPE html>')) {
-        throw new Error('API Endpoint Not Found');
+      if (res.status === 404) {
+        throw new Error('API_NOT_FOUND');
       }
       throw new Error(`Server Error (${res.status}): ${text.slice(0, 100)}`);
     }
     return res.json();
   } catch (error) {
-    console.error(`Fetch failed for ${url}:`, error);
+    // Re-throw to be handled by specific service methods
     throw error;
   }
 };
@@ -25,26 +23,44 @@ const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
 export const apiService = {
   // State
   getState: async (): Promise<BotState> => {
-    return fetchJson<BotState>(`${API_BASE}/state`);
+    try {
+      return await fetchJson<BotState>(`${API_BASE}/state`);
+    } catch (error) {
+      console.warn("API State unreachable, using default:", error);
+      // Return default offline state to prevent UI crash
+      return { isActive: false, balance: 1000, openPositions: [], history: [] };
+    }
   },
   saveState: async (state: BotState): Promise<void> => {
-    await fetchJson(`${API_BASE}/state`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(state),
-    });
+    try {
+      await fetchJson(`${API_BASE}/state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state),
+      });
+    } catch (error) {
+      console.warn("Failed to save state (Offline mode)", error);
+    }
   },
 
   // History
   getHistory: async (): Promise<TradeRecord[]> => {
-    return fetchJson<TradeRecord[]>(`${API_BASE}/history`);
+    try {
+      return await fetchJson<TradeRecord[]>(`${API_BASE}/history`);
+    } catch (error) {
+      return []; // Return empty history if offline
+    }
   },
   addToHistory: async (record: TradeRecord): Promise<void> => {
-    await fetchJson(`${API_BASE}/history`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(record),
-    });
+    try {
+      await fetchJson(`${API_BASE}/history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record),
+      });
+    } catch (error) {
+      console.warn("Failed to save history (Offline mode)");
+    }
   },
 
   // Key

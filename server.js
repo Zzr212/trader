@@ -61,7 +61,7 @@ const writeJson = async (filename, data) => {
   }
 };
 
-// --- API ROUTES (Defined BEFORE static files) ---
+// --- API ROUTES ---
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: Date.now() });
@@ -85,7 +85,7 @@ app.get('/api/history', async (req, res) => {
 app.post('/api/history', async (req, res) => {
   const history = await readJson('trades.json', []);
   const newRecords = Array.isArray(req.body) ? req.body : [req.body];
-  const updated = [...newRecords, ...history].slice(0, 500);
+  const updated = [...newRecords, ...history].slice(0, 1000); // Increased history limit for multiple pairs
   await writeJson('trades.json', updated);
   res.json({ success: true });
 });
@@ -113,10 +113,16 @@ app.post('/api/analyze', async (req, res) => {
     const apiKey = keyData?.key || process.env.API_KEY;
 
     if (!apiKey) {
-      return res.status(401).json({ error: 'AI API Key missing on server.' });
+      return res.status(401).json({ error: 'AI API Key missing.' });
     }
 
-    const { prompt, model } = req.body;
+    let { prompt, model } = req.body;
+    
+    // Safety clamp for prompt size
+    if (prompt && prompt.length > 10000) {
+      prompt = prompt.substring(0, 10000) + "... [Truncated]";
+    }
+
     const ai = new GoogleGenAI({ apiKey });
 
     const response = await ai.models.generateContent({
@@ -142,8 +148,20 @@ app.post('/api/analyze', async (req, res) => {
     res.json({ text: response.text });
   } catch (error) {
     console.error("AI Proxy Error:", error);
-    res.status(500).json({ error: error.message || 'AI Processing Failed' });
+    // Send a 200 with error details so the frontend handles it gracefully without a 500 crash
+    res.json({ 
+      text: JSON.stringify({
+        action: "HOLD", 
+        confidence: 0, 
+        reasoning: `AI Error: ${error.message || 'Unknown'}` 
+      }) 
+    });
   }
+});
+
+// Explicit 404 for API routes
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: 'API Endpoint Not Found' });
 });
 
 // --- STATIC FILES ---
