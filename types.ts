@@ -19,6 +19,7 @@ export interface TradePosition {
   amount: number;
   tp: number;
   sl: number;
+  leverage: number;
   timestamp: number;
   pnl?: number;
 }
@@ -31,18 +32,18 @@ export interface TradeRecord extends TradePosition {
 
 export interface BotState {
   isActive: boolean;
-  startTime?: number; // For persistent uptime
+  startTime?: number; // Added for uptime tracking
   balance: number;
   openPositions: TradePosition[];
   history: TradeRecord[];
+  totalProfit: number;
 }
 
 export interface AppSettings {
-  apiKey: string;
   theme: 'dark' | 'light';
   chartMode: ChartMode;
   timeframe: Timeframe;
-  useAiAssistant: boolean;
+  riskPerTrade: number; // Percentage
 }
 
 export enum TradeAction {
@@ -55,7 +56,7 @@ export interface ChartLine {
   price: number;
   title: string;
   color: string;
-  type: 'RESISTANCE' | 'SUPPORT' | 'TREND';
+  type: 'RESISTANCE' | 'SUPPORT' | 'TREND' | 'BAND_UPPER' | 'BAND_LOWER';
 }
 
 export interface TradeSignal {
@@ -67,6 +68,6 @@ export interface TradeSignal {
   tp: number;
   sl: number;
   patterns?: string[];
-  chartLines?: ChartLine[]; // For visual drawing
+  chartLines?: ChartLine[]; 
   timestamp: number;
 }
