@@ -1,10 +1,8 @@
-import { GoogleGenAI, Type } from "@google/genai";
+
 import { Candle, TradeSignal, TradeAction } from "../types";
+import { apiService } from "./apiService";
 
 export const analyzeWithAi = async (candles: Candle[], algoSignal: TradeSignal): Promise<TradeSignal> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const model = "gemini-3-flash-preview";
-  
   const recent = candles.slice(-20).map(c => `H:${c.high} L:${c.low} C:${c.close}`).join('|');
   
   const prompt = `
@@ -20,38 +18,30 @@ export const analyzeWithAi = async (candles: Candle[], algoSignal: TradeSignal):
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            action: { type: Type.STRING, enum: ["BUY", "SELL", "HOLD"] },
-            confidence: { type: Type.NUMBER },
-            reasoning: { type: Type.STRING },
-            tp: { type: Type.NUMBER },
-            sl: { type: Type.NUMBER },
-            patterns: { type: Type.ARRAY, items: { type: Type.STRING } }
-          },
-          required: ["action", "confidence", "reasoning"]
-        }
-      }
-    });
+    // Call server proxy
+    const response = await apiService.analyze(prompt, "gemini-3-flash-preview");
+    
+    const jsonStr = response.text?.trim();
+    if (!jsonStr) return algoSignal;
 
-    const data = JSON.parse(response.text || '{}');
+    const data = JSON.parse(jsonStr);
+    
+    // Safety check: Ensure strict return types
     return {
       ...algoSignal,
-      action: data.action as TradeAction,
-      confidence: data.confidence,
+      action: (['BUY', 'SELL', 'HOLD'].includes(data.action) ? data.action : TradeAction.HOLD) as TradeAction,
+      confidence: data.confidence || 0,
       reasoning: `AI: ${data.reasoning}`,
       tp: data.tp || algoSignal.tp,
       sl: data.sl || algoSignal.sl,
       patterns: data.patterns || algoSignal.patterns
     };
   } catch (err) {
-    console.error("Gemini Error:", err);
-    return algoSignal; // Fallback to algo
+    console.error("AI Service Error:", err);
+    // If AI fails, fallback to algo signal but mark as AI_ERROR
+    return {
+        ...algoSignal,
+        reasoning: `${algoSignal.reasoning} (AI Unreachable)`
+    };
   }
 };

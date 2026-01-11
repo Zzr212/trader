@@ -1,11 +1,17 @@
+
 import { Candle, Timeframe } from '../types';
 
 const BINANCE_REST = 'https://api.binance.com/api/v3/klines';
 const BINANCE_WS = 'wss://stream.binance.com:9443/ws';
 
-export const fetchHistoricalData = async (symbol: string = 'BTCUSDT', interval: Timeframe = '1m', limit: number = 300): Promise<Candle[]> => {
+export const fetchHistoricalData = async (symbol: string = 'BTCUSDT', interval: Timeframe = '1m', limit: number = 300, endTime?: number): Promise<Candle[]> => {
   try {
-    const response = await fetch(`${BINANCE_REST}?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+    let url = `${BINANCE_REST}?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+    if (endTime) {
+      url += `&endTime=${endTime * 1000}`;
+    }
+
+    const response = await fetch(url);
     const data = await response.json();
     return data.map((d: any) => ({
       time: Math.floor(d[0] / 1000),

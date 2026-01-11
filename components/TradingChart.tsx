@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   createChart, 
   ColorType, 
@@ -17,14 +18,16 @@ interface TradingChartProps {
   mode: ChartMode;
   positions: TradePosition[];
   lastSignal: TradeSignal | null;
+  onLoadMore: () => Promise<void>;
 }
 
-export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, positions, lastSignal }) => {
+export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, positions, lastSignal, onLoadMore }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<any> | null>(null);
   const linesRef = useRef<IPriceLine[]>([]);
   const lastTimeRef = useRef<number>(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -49,10 +52,19 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, position
         secondsVisible: false,
       },
       width: chartContainerRef.current.clientWidth,
-      height: 450,
+      height: 400, // Slightly reduced height for mobile optimization
     });
 
     chartRef.current = chart;
+
+    // Infinite Scroll Logic
+    chart.timeScale().subscribeVisibleLogicalRangeChange(async (range) => {
+      if (range && range.from < 0 && !isLoadingMore) {
+        setIsLoadingMore(true);
+        await onLoadMore();
+        setIsLoadingMore(false);
+      }
+    });
 
     const handleResize = () => {
       if (chartContainerRef.current) {
@@ -67,15 +79,10 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, position
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, []);
+  }, []); // Empty dependency mainly, hooks handle updates
 
   useEffect(() => {
     if (!chartRef.current) return;
-    
-    // Initialize series if it doesn't exist or if we are recreating it (though usually we just update data)
-    // Note: To support mode switching properly without complex cleanup, we usually assume the chart is recreated or we remove series.
-    // For this simple implementation, if mode changes, we might want to clear the series. 
-    // However, the dependencies include `mode`. If series exists, we should probably remove it to switch types.
     
     if (seriesRef.current && seriesRef.current.seriesType() !== (mode === 'CANDLES' ? 'Candlestick' : mode === 'AREA' ? 'Area' : 'Line')) {
       chartRef.current.removeSeries(seriesRef.current);
@@ -108,27 +115,8 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, position
     }
 
     if (data.length > 0) {
-      const lastCandle = data[data.length - 1];
-      
-      // If data was cleared externally or it's a fresh load
-      if (lastTimeRef.current === 0 || data.length < 5) {
-        seriesRef.current.setData(data as any);
-        lastTimeRef.current = lastCandle.time;
-      } else {
-        // Only update if time is new
-        if (lastCandle.time >= lastTimeRef.current) {
-          seriesRef.current.update(lastCandle as any);
-          lastTimeRef.current = lastCandle.time;
-        } else {
-          // If historical data is re-fetched/changed completely
-          seriesRef.current.setData(data as any);
-          lastTimeRef.current = lastCandle.time;
-        }
-      }
-    } else {
-      // Data cleared
-      seriesRef.current.setData([]);
-      lastTimeRef.current = 0;
+      const sortedData = [...data].sort((a, b) => a.time - b.time);
+      seriesRef.current.setData(sortedData as any);
     }
   }, [data, mode]);
 
@@ -145,50 +133,47 @@ export const TradingChart: React.FC<TradingChartProps> = ({ data, mode, position
     if (target) {
       const isSignal = !activePos;
       const opacity = isSignal ? 0.4 : 0.8;
-      const lineStyle = isSignal ? 2 : 0; // 2 = Dashed, 0 = Solid
+      const lineStyle = isSignal ? 2 : 0;
 
       const entryPrice = activePos ? activePos.entryPrice : signal?.entry;
       if (entryPrice) {
-        const entryLine = seriesRef.current.createPriceLine({
+        linesRef.current.push(seriesRef.current.createPriceLine({
           price: entryPrice,
           color: `rgba(255, 255, 255, ${opacity})`,
           lineWidth: 2,
-          lineStyle: lineStyle,
+          lineStyle,
           axisLabelVisible: true,
           title: activePos ? `${activePos.type} ENTRY` : `SIGNAL ENTRY`,
-        });
-        linesRef.current.push(entryLine);
+        }));
       }
 
       if (target.tp) {
-        const tpLine = seriesRef.current.createPriceLine({
+        linesRef.current.push(seriesRef.current.createPriceLine({
           price: target.tp,
           color: `rgba(16, 185, 129, ${opacity})`,
           lineWidth: 2,
-          lineStyle: lineStyle,
+          lineStyle,
           axisLabelVisible: true,
-          title: 'TARGET TP',
-        });
-        linesRef.current.push(tpLine);
+          title: 'TP',
+        }));
       }
 
       if (target.sl) {
-        const slLine = seriesRef.current.createPriceLine({
+        linesRef.current.push(seriesRef.current.createPriceLine({
           price: target.sl,
           color: `rgba(239, 68, 68, ${opacity})`,
           lineWidth: 2,
-          lineStyle: lineStyle,
+          lineStyle,
           axisLabelVisible: true,
-          title: 'SAFETY SL',
-        });
-        linesRef.current.push(slLine);
+          title: 'SL',
+        }));
       }
     }
   }, [positions, lastSignal]);
 
   return (
     <div className="relative">
-      <div ref={chartContainerRef} className="w-full border-y border-white/5" />
+      <div ref={chartContainerRef} className="w-full border-y border-white/5 h-[400px]" />
       {lastSignal && lastSignal.patterns && lastSignal.patterns.length > 0 && (
         <div className="absolute top-4 left-4 flex flex-wrap gap-2 pointer-events-none">
           {lastSignal.patterns.map((p, i) => (
